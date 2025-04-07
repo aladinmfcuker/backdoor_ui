@@ -3,6 +3,10 @@ module github.com/aladinmfcuker/backdoor_ui
 go 1.24.2
 
 require (
-	github.com/andlabs/ui v0.0.0-20200610043537-70a69d6ae31e
-	github.com/micmonay/keybd_event v1.1.2
+	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794 // indirect
+	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
+	golang.org/x/sys v0.32.0 // indirect
+	github.com/micmonay/keybd_event v1.1.2	
+	gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
+
 )

