@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/lxn/walk"
-	"github.com/lxn/walk/declarative"
-	"github.com/micmonay/keybd_event" // Corrected import for keyboard events
+	. "github.com/lxn/walk/declarative" // Using dot import for declarative
+	"github.com/micmonay/keybd_event"   // Corrected import for keyboard events
 )
 
 const (
@@ -194,28 +194,32 @@ func logMessage(message string) {
 }
 
 func createUIWrapper(config Config) {
-	walk.NewApp()
-	mw, err := declarative.MainWindow{
+	app, err := walk.NewApp()
+	if err != nil {
+		log.Fatal("Failed to create walk app:", err)
+	}
+
+	mw, err := MainWindow{
 		Title:   "Backdoor Listener",
-		MinSize: declarative.Size{Width: 300, Height: 200},
-		Layout:  declarative.VBox{},
-		Children: []declarative.Widget{
-			declarative.Composite{
-				Layout: declarative.Grid{Columns: 2},
-				Children: []declarative.Widget{
-					declarative.Label{Text: "Listen Address:"},
-					declarative.LineEdit{AssignTo: &addressLineEdit, Text: config.Host},
-					declarative.Label{Text: "Listen Port:"},
-					declarative.LineEdit{AssignTo: &portLineEdit, Text: config.Port},
+		MinSize: Size{Width: 300, Height: 200},
+		Layout:  VBox{},
+		Children: []Widget{
+			Composite{
+				Layout: Grid{Columns: 2},
+				Children: []Widget{
+					Label{Text: "Listen Address:"},
+					LineEdit{AssignTo: &addressLineEdit, Text: config.Host},
+					Label{Text: "Listen Port:"},
+					LineEdit{AssignTo: &portLineEdit, Text: config.Port},
 				},
 			},
-			declarative.PushButton{
+			PushButton{
 				Text:      "Start Listener",
 				AssignTo:  &connectButton,
 				OnClicked: func() { connectButtonHandler() },
 			},
-			declarative.Label{Text: "Log:"},
-			declarative.TextEdit{
+			Label{Text: "Log:"},
+			TextEdit{
 				AssignTo:    &logTextEdit,
 				ReadOnly:    true,
 				VScroll:     true,
@@ -225,7 +229,7 @@ func createUIWrapper(config Config) {
 		},
 		OnClose: func() {
 			stopListenerService()
-			walk.App().Exit(0)
+			app.Exit(0)
 			uiVisible = false
 			mainWindow = nil
 		},
@@ -237,7 +241,7 @@ func createUIWrapper(config Config) {
 	}
 
 	mainWindow.Show()
-	walk.App().Run()
+	app.Run()
 }
 
 func main() {
