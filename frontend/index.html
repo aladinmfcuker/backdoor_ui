@@ -1,240 +1,210 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Listener Control Panel</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Crypto Trading Intelligence Platform</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        #logOutput::-webkit-scrollbar { width: 8px; }
-        #logOutput::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-        #logOutput::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
-        #logOutput::-webkit-scrollbar-thumb:hover { background: #555; }
-        /* Style for disabled inputs */
-        input:disabled, textarea:disabled, button:disabled {
-            background-color: #f3f4f6; /* bg-gray-100 */
-            cursor: not-allowed;
-            opacity: 0.7;
-        }
-        button:disabled {
-             pointer-events: none; /* Prevent clicks on disabled button */
-        }
-
+      body { background: #0b1220; color: #e2e8f0; }
+      .card { background: linear-gradient(145deg, #111827, #0f172a); border: 1px solid #1f2937; }
     </style>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-</head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+  </head>
+  <body class="min-h-screen font-sans">
+    <div class="p-4 md:p-6 space-y-4">
+      <header class="flex items-center justify-between">
+        <h1 class="text-2xl font-semibold">Crypto Trading Intelligence Terminal</h1>
+        <div class="text-sm text-slate-400" id="connectionStatus">Connecting...</div>
+      </header>
 
-    <div class="bg-white p-6 md:p-8 rounded-lg shadow-lg w-full max-w-lg">
-        <h1 class="text-2xl font-bold mb-6 text-center text-gray-800">Listener Control Panel</h1>
-
-        <!-- Connection Settings -->
-        <div class="mb-6 border border-gray-200 p-4 rounded-md">
-            <h2 class="text-lg font-semibold mb-3 text-gray-700">Listener Settings</h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                    <label for="hostInput" class="block text-sm font-medium text-gray-600 mb-1">Listen Address:</label>
-                    <input type="text" id="hostInput" value="127.0.0.1" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
-                </div>
-                <div>
-                    <label for="portInput" class="block text-sm font-medium text-gray-600 mb-1">Listen Port:</label>
-                    <input type="text" id="portInput" value="12345" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
-                </div>
-            </div>
-             <div class="space-y-3">
-                 <div class="flex items-center">
-                    <input id="allowCommandsCheckbox" name="allowCommands" type="checkbox" checked class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded transition duration-150 ease-in-out">
-                    <label for="allowCommandsCheckbox" class="ml-2 block text-sm text-gray-900">Allow Remote Command Execution</label>
-                </div>
-                 <div>
-                    <label for="allowedIPsInput" class="block text-sm font-medium text-gray-600 mb-1">Allowed IPs (comma-separated, optional):</label>
-                    <input type="text" id="allowedIPsInput" placeholder="e.g., 192.168.1.100, 10.0.0.5" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out">
-                </div>
-            </div>
+      <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="card rounded-xl p-4 xl:col-span-2">
+          <div class="flex justify-between mb-2"><h2 class="text-lg font-medium">Live Candlestick Chart</h2><span id="symbol" class="text-slate-400"></span></div>
+          <canvas id="candleChart" height="120"></canvas>
         </div>
 
-        <!-- Control Button -->
-        <div class="mb-6 text-center">
-            <button id="toggleListenerBtn" class="w-full sm:w-auto px-6 py-2.5 bg-indigo-600 text-white font-semibold rounded-md shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
-                Start Listener
-            </button>
+        <div class="card rounded-xl p-4 space-y-4">
+          <h2 class="text-lg font-medium">Signal Strength</h2>
+          <div class="text-3xl font-bold" id="signalLabel">Neutral</div>
+          <div class="w-full h-4 bg-slate-800 rounded overflow-hidden">
+            <div id="signalGauge" class="h-4 bg-cyan-400 transition-all duration-500" style="width:0%"></div>
+          </div>
+          <div id="signalPct" class="text-sm text-slate-300">0%</div>
+
+          <h3 class="text-md font-medium pt-3">Indicator Breakdown</h3>
+          <div id="indicators" class="grid grid-cols-2 gap-2 text-sm"></div>
+        </div>
+      </section>
+
+      <section class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div class="card rounded-xl p-4 xl:col-span-2">
+          <h2 class="text-lg font-medium mb-2">Trade History</h2>
+          <div class="overflow-auto max-h-72">
+            <table class="w-full text-sm">
+              <thead class="text-slate-400 sticky top-0 bg-slate-900">
+                <tr><th class="text-left p-2">Time</th><th class="text-left p-2">Side</th><th class="text-right p-2">Entry</th><th class="text-right p-2">Exit</th><th class="text-right p-2">PnL</th></tr>
+              </thead>
+              <tbody id="tradeTable"></tbody>
+            </table>
+          </div>
         </div>
 
-        <!-- Log Output -->
-        <div>
-            <label for="logOutput" class="block text-sm font-medium text-gray-600 mb-1">Log:</label>
-            <textarea id="logOutput" rows="10" readonly class="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-50 shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm custom-scrollbar"></textarea>
+        <div class="card rounded-xl p-4 space-y-3">
+          <h2 class="text-lg font-medium">Performance</h2>
+          <div class="grid grid-cols-2 gap-2 text-sm">
+            <div class="text-slate-400">Equity</div><div id="equity" class="text-right">-</div>
+            <div class="text-slate-400">Win Rate</div><div id="winRate" class="text-right">-</div>
+            <div class="text-slate-400">Max Drawdown</div><div id="maxDD" class="text-right">-</div>
+            <div class="text-slate-400">Profit Factor</div><div id="profitFactor" class="text-right">-</div>
+            <div class="text-slate-400">Signal Accuracy</div><div id="accuracy" class="text-right">-</div>
+            <div class="text-slate-400">Trades</div><div id="totalTrades" class="text-right">-</div>
+          </div>
         </div>
+      </section>
+
+      <section class="card rounded-xl p-4">
+        <h2 class="text-lg font-medium mb-2">Equity Curve</h2>
+        <canvas id="equityChart" height="90"></canvas>
+      </section>
     </div>
 
     <script>
-        const hostInput = document.getElementById('hostInput');
-        const portInput = document.getElementById('portInput');
-        const allowCommandsCheckbox = document.getElementById('allowCommandsCheckbox');
-        const allowedIPsInput = document.getElementById('allowedIPsInput');
-        const toggleListenerBtn = document.getElementById('toggleListenerBtn');
-        const logOutput = document.getElementById('logOutput');
+      const connectionStatus = document.getElementById('connectionStatus');
+      const signalGauge = document.getElementById('signalGauge');
+      const signalLabel = document.getElementById('signalLabel');
+      const signalPct = document.getElementById('signalPct');
+      const indicators = document.getElementById('indicators');
+      const symbolEl = document.getElementById('symbol');
+      const tradeTable = document.getElementById('tradeTable');
 
-        let ws = null;
-        let isListening = false; // Track listener state based on backend messages
-        let currentConfig = {}; // Store config received from backend
+      const candleData = [];
+      const buySellMarkers = [];
 
-        // --- WebSocket Handling ---
-        function connectWebSocket() {
-            // Use window.location.host to dynamically get the host and port the UI is served from
-            const wsUrl = `ws://${window.location.host}/ws`;
-            ws = new WebSocket(wsUrl);
-
-            ws.onopen = () => {
-                logMessage("[WebSocket] Connected to backend.");
-                // Request initial status/config when connection opens
-                sendMessage({ action: "get_status" });
-            };
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log("Received:", data); // For debugging
-
-                    if (data.type === 'log') {
-                        logMessageFromServer(data.message);
-                    } else if (data.type === 'status') {
-                        isListening = data.listening;
-                        currentConfig = data.config || {}; // Store received config
-                        updateUIState();
-                        // Update inputs only if we received config data
-                        if (data.config) {
-                            hostInput.value = data.config.Host || '';
-                            portInput.value = data.config.Port || '';
-                            allowCommandsCheckbox.checked = data.config.AllowCommands ?? true; // Default to true if missing
-                            allowedIPsInput.value = (data.config.AllowedIPs || []).join(', '); // Join array to string
-                        }
-                         // Log initial status message based on received state
-                        if (!data.initial) { // Avoid logging duplicate status on reconnect/refresh
-                           logMessage(`Listener is currently ${isListening ? 'ACTIVE' : 'STOPPED'}${isListening && data.config ? ' on ' + data.config.Host + ':' + data.config.Port : ''}.`);
-                        }
-
-                    } else if (data.type === 'error') {
-                        logMessage(`[Backend Error] ${data.message}`);
-                        // Optionally revert UI state if an action failed critically
-                    }
-                } catch (e) {
-                    console.error("Failed to parse WebSocket message:", event.data, e);
-                    logMessage("[Error] Received invalid message from backend.");
-                }
-            };
-
-            ws.onerror = (error) => {
-                console.error("WebSocket Error:", error);
-                logMessage("[WebSocket] Connection error.");
-                // Optionally disable controls or show error state
-                 isListening = false; // Assume stopped on error
-                 updateUIState();
-                 toggleListenerBtn.disabled = true; // Disable button on connection error
-                 toggleListenerBtn.textContent = 'Connection Error';
-            };
-
-            ws.onclose = () => {
-                logMessage("[WebSocket] Connection closed. Attempting to reconnect...");
-                 isListening = false; // Assume stopped on close
-                 updateUIState();
-                 toggleListenerBtn.disabled = true; // Disable button until reconnected
-                 toggleListenerBtn.textContent = 'Reconnecting...';
-                // Simple reconnect logic (consider exponential backoff for production)
-                setTimeout(connectWebSocket, 5000); // Try to reconnect every 5 seconds
-            };
-        }
-
-        // Function to send JSON messages to backend
-        function sendMessage(message) {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify(message));
-            } else {
-                logMessage("[Error] WebSocket not connected. Cannot send message.");
+      const candleChart = new Chart(document.getElementById('candleChart').getContext('2d'), {
+        data: {
+          datasets: [
+            {
+              type: 'candlestick',
+              label: 'Price',
+              data: candleData,
+              color: { up: '#34d399', down: '#f87171', unchanged: '#cbd5e1' }
+            },
+            {
+              type: 'scatter',
+              label: 'Signals',
+              data: buySellMarkers,
+              pointRadius: 4,
+              backgroundColor: ctx => ctx.raw.side === 'buy' ? '#22c55e' : '#ef4444'
             }
+          ]
+        },
+        options: {
+          responsive: true,
+          animation: { duration: 280 },
+          plugins: { legend: { labels: { color: '#94a3b8' } } },
+          scales: {
+            x: { type: 'time', ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } }
+          }
         }
+      });
 
-        // --- UI Update Logic ---
-        function updateUIState() {
-            hostInput.disabled = isListening;
-            portInput.disabled = isListening;
-            allowCommandsCheckbox.disabled = isListening;
-            allowedIPsInput.disabled = isListening;
+      const equityChart = new Chart(document.getElementById('equityChart').getContext('2d'), {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'Equity', data: [], borderColor: '#38bdf8', tension: 0.25, fill: false }] },
+        options: {
+          responsive: true,
+          plugins: { legend: { labels: { color: '#94a3b8' } } },
+          scales: {
+            x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },
+            y: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } }
+          }
+        }
+      });
 
-            if (isListening) {
-                toggleListenerBtn.textContent = 'Stop Listener';
-                toggleListenerBtn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700', 'focus:ring-indigo-500');
-                toggleListenerBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
-            } else {
-                toggleListenerBtn.textContent = 'Start Listener';
-                toggleListenerBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
-                toggleListenerBtn.classList.add('bg-indigo-600', 'hover:bg-indigo-700', 'focus:ring-indigo-500');
+      function formatNum(value) { return Number(value).toFixed(2); }
+
+      function connect() {
+        const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${protocol}://${location.host}/ws/frontend`);
+
+        ws.onopen = () => { connectionStatus.textContent = 'Connected'; connectionStatus.className = 'text-emerald-400 text-sm'; ws.send('ready'); };
+        ws.onclose = () => {
+          connectionStatus.textContent = 'Reconnecting...';
+          connectionStatus.className = 'text-amber-400 text-sm';
+          setTimeout(connect, 2000);
+        };
+
+        ws.onmessage = (event) => {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'hello') {
+            symbolEl.textContent = msg.symbol;
+          }
+
+          if (msg.type === 'new_candle' && msg.timeframe === '1m') {
+            const c = msg.data;
+            candleData.push({ x: new Date(c.close_time), o: c.open, h: c.high, l: c.low, c: c.close });
+            if (candleData.length > 250) candleData.shift();
+            candleChart.update('none');
+          }
+
+          if (msg.type === 'signal') {
+            const s = msg.data;
+            signalLabel.textContent = s.label;
+            signalPct.textContent = `${formatNum(s.strength)}%`;
+            signalGauge.style.width = `${Math.min(100, s.strength)}%`;
+            signalGauge.className = `h-4 transition-all duration-500 ${s.score >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`;
+
+            indicators.innerHTML = '';
+            Object.entries(s.indicator_breakdown).forEach(([k, v]) => {
+              const el = document.createElement('div');
+              el.className = 'flex justify-between bg-slate-900 rounded px-2 py-1';
+              el.innerHTML = `<span class="text-slate-400">${k}</span><span class="${v >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${formatNum(v)}</span>`;
+              indicators.appendChild(el);
+            });
+
+            const last = candleData[candleData.length - 1];
+            if (last && ['Buy', 'Strong Buy', 'Sell', 'Strong Sell'].includes(s.label)) {
+              buySellMarkers.push({ x: last.x, y: last.c, side: s.score > 0 ? 'buy' : 'sell' });
+              if (buySellMarkers.length > 70) buySellMarkers.shift();
+              candleChart.update('none');
             }
-             // Re-enable button if it was disabled due to connection error/reconnect attempt
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                 toggleListenerBtn.disabled = false;
-            }
-        }
+          }
 
-        // --- Logging ---
-        function logMessage(message) {
-            const timestamp = new Date().toLocaleTimeString();
-            logOutput.value += `[${timestamp}] ${message}\n`;
-            logOutput.scrollTop = logOutput.scrollHeight; // Auto-scroll
-        }
-        // Separate function for logs coming *from* the server to distinguish source if needed
-        function logMessageFromServer(message) {
-             // Assuming server logs already have timestamp/prefix if desired
-             logOutput.value += `${message}\n`;
-             logOutput.scrollTop = logOutput.scrollHeight;
-        }
+          if (msg.type === 'trade_update') {
+            const t = msg.data;
+            const row = document.createElement('tr');
+            row.innerHTML = `<td class="p-2">${new Date(t.exit_time).toLocaleTimeString()}</td>
+                             <td class="p-2 ${t.side === 'long' ? 'text-emerald-400' : 'text-rose-400'}">${t.side}</td>
+                             <td class="p-2 text-right">${formatNum(t.entry_price)}</td>
+                             <td class="p-2 text-right">${formatNum(t.exit_price)}</td>
+                             <td class="p-2 text-right ${t.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${formatNum(t.pnl)}</td>`;
+            tradeTable.prepend(row);
+            while (tradeTable.children.length > 100) tradeTable.removeChild(tradeTable.lastChild);
+          }
 
+          if (msg.type === 'metrics') {
+            const m = msg.data;
+            document.getElementById('equity').textContent = formatNum(m.equity);
+            document.getElementById('winRate').textContent = `${formatNum(m.win_rate)}%`;
+            document.getElementById('maxDD').textContent = `${formatNum(m.max_drawdown)}%`;
+            document.getElementById('profitFactor').textContent = Number.isFinite(m.profit_factor) ? formatNum(m.profit_factor) : '∞';
+            document.getElementById('accuracy').textContent = `${formatNum(m.rolling_accuracy)}% (${m.signal_accuracy_samples})`;
+            document.getElementById('totalTrades').textContent = m.total_trades;
 
-        // --- Event Listeners ---
-        toggleListenerBtn.addEventListener('click', () => {
-            if (isListening) {
-                // --- Send Stop Signal ---
-                logMessage("Sending stop request to backend...");
-                sendMessage({ action: "stop" });
-            } else {
-                // --- Send Start Signal ---
-                const host = hostInput.value.trim();
-                const port = portInput.value.trim();
-                const allowCmd = allowCommandsCheckbox.checked;
-                // Split IPs, trim whitespace, filter empty strings
-                const allowedIPs = allowedIPsInput.value.split(',')
-                                      .map(ip => ip.trim())
-                                      .filter(ip => ip !== '');
+            equityChart.data.labels = m.equity_curve.map((_, i) => i + 1);
+            equityChart.data.datasets[0].data = m.equity_curve;
+            equityChart.update('none');
+          }
+        };
+      }
 
-                if (!host || !port) {
-                    logMessage("Error: Host and Port cannot be empty.");
-                    alert("Please enter both Host and Port.");
-                    return;
-                }
-
-                logMessage(`Sending start request to backend (Host: ${host}, Port: ${port})...`);
-                sendMessage({
-                    action: "start",
-                    config: {
-                        Host: host,
-                        Port: port,
-                        AllowCommands: allowCmd,
-                        AllowedIPs: allowedIPs
-                    }
-                });
-            }
-        });
-
-        // --- Initialization ---
-        document.addEventListener('DOMContentLoaded', () => {
-            logMessage("UI Initialized. Connecting to backend...");
-            connectWebSocket(); // Start WebSocket connection when DOM is ready
-        });
-
+      connect();
     </script>
-
-</body>
+  </body>
 </html>
